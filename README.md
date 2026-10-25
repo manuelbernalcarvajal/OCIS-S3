@@ -43,7 +43,7 @@ services:
       # Cliente OIDC Pocket ID
       - OIDC_CLIENT_ID=ocis-monolith
     volumes:
-      - ./datos_nube:/data
+      - datos_nube:/data
     ulimits:
       nofile:
         soft: 65536
