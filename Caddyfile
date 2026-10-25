@@ -9,8 +9,10 @@
         root /data/system/caddy
     }
 
+    protocols h1 h2 h3
+
     # Rutas para autenticación Pocket ID
-    handle /id/* {
+    handle /id* {
         reverse_proxy 127.0.0.1:8081
     }
 
