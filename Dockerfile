@@ -3,28 +3,28 @@
 # Etapa 1: Extracción de binarios estáticos
 FROM caddy:2-alpine AS bin-caddy
 FROM rclone/rclone:latest AS bin-rclone
-FROM owncloud/ocis:latest AS bin-ocis
 FROM litestream/litestream:latest AS bin-litestream
 FROM ghcr.io/pocket-id/pocket-id:latest AS bin-pocketid
 
-# Etapa 2: Imagen base limpia (Debian Slim evita desajustes de glibc en binarios Go)
-FROM debian:bookworm-slim
+# Etapa 2: Imagen base nativa de OCIS (incluye musl, libvips y el binario en /usr/bin/ocis)
+FROM owncloud/ocis:latest
 
-# Dependencias mínimas del sistema y limpieza en el mismo paso
-RUN apt-get update && apt-get install -y --no-install-recommends \
+USER root
+
+# Dependencias mínimas para los scripts
+RUN apk add --no-cache \
+    bash \
     ca-certificates \
     curl \
     tzdata \
-    netcat-traditional \
+    netcat-openbsd \
     procps \
-    sqlite3 \
-    jq \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    sqlite \
+    jq
 
-# Copiar ejecutables
+# Copiar ejecutables adicionales
 COPY --from=bin-caddy /usr/bin/caddy /usr/local/bin/caddy
 COPY --from=bin-rclone /usr/local/bin/rclone /usr/local/bin/rclone
-COPY --from=bin-ocis /usr/bin/ocis /usr/local/bin/ocis
 COPY --from=bin-litestream /usr/local/bin/litestream /usr/local/bin/litestream
 COPY --from=bin-pocketid /app /opt/pocket-id
 
