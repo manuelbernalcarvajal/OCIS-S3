@@ -1,0 +1,5 @@
+.git
+.github
+*.md
+compose.yml
+datos_nube/
