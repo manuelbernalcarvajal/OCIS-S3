@@ -5,7 +5,7 @@ FROM caddy:2-alpine AS bin-caddy
 FROM rclone/rclone:latest AS bin-rclone
 FROM owncloud/ocis:latest AS bin-ocis
 FROM litestream/litestream:latest AS bin-litestream
-FROM ghcr.io/stonith404/pocket-id:latest AS bin-pocketid
+FROM ghcr.io/pocket-id/pocket-id:latest AS bin-pocketid
 
 # Etapa 2: Imagen base limpia (Debian Slim evita desajustes de glibc en binarios Go)
 FROM debian:bookworm-slim
