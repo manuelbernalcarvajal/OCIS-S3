@@ -182,11 +182,10 @@ else
     fi
     export ENCRYPTION_KEY="$(cat "${KEY_FILE}")"
 fi
-export ENCRYPTION_KEY="${ENCRYPTION_KEY:-$(cat "${KEY_FILE}")}"
 
-# Solo restaurar desde S3 si el archivo local NO existe
+# Solo restaurar desde S3 si la base de datos local NO existe
 if [ ! -f "${DB_PATH}" ]; then
-    log "LITESTREAM" "Comprobando réplica previa de base de datos..."
+    log "LITESTREAM" "Buscando réplica previa de base de datos en S3..."
     litestream restore -if-replica-exists -config /etc/app/litestream.yml "${DB_PATH}" > >(log_pipe "litestream-sync") 2>&1 || true
 fi
 
@@ -212,7 +211,6 @@ caddy run --config "${CADDY_CONFIG}" > >(log_pipe "caddy") 2>&1 &
 CADDY_PID=$!
 PIDS+=(${CADDY_PID})
 
-# Esperar a que Caddy abra puerto o detectar si muere de inmediato
 while ! nc -z 127.0.0.1 80 && ! nc -z 127.0.0.1 443; do
     if ! kill -0 "${CADDY_PID}" 2>/dev/null; then
         log "ERROR" "Caddy se cerró inesperadamente al arrancar. Revisa la sintaxis."
@@ -233,17 +231,23 @@ export OCIS_URL="https://${DOMAIN_NAME}"
 export OCIS_INSECURE="true"
 export OCIS_EXCLUDE_RUN_SERVICES="idp"
 
-# Si en la prueba anterior se creó suelto en la raíz, lo movemos a /config
+# Migración de rescate si el archivo quedó suelto en la raíz en pruebas previas
 if [ -f "/data/system/ocis/ocis.yaml" ] && [ ! -f "${OCIS_CONFIG_DIR}/ocis.yaml" ]; then
     mkdir -p "${OCIS_CONFIG_DIR}"
     mv /data/system/ocis/ocis.yaml "${OCIS_CONFIG_DIR}/ocis.yaml"
 fi
 
-# Enlace simbólico de respaldo para que /etc/ocis apunte siempre a nuestro volumen
+# Recuperación ante desastres: restaurar ocis.yaml desde Backblaze si no está en local
+if [ ! -f "${OCIS_CONFIG_DIR}/ocis.yaml" ]; then
+    log "OCIS" "Buscando copia de respaldo de ocis.yaml en almacenamiento cifrado..."
+    rclone copy crypt-store:ocis/backups/ocis-config/ "${OCIS_CONFIG_DIR}/" --config "${RCLONE_CONFIG}" 2>/dev/null || true
+fi
+
+# Enlace simbólico para que /etc/ocis apunte siempre a la ruta persistente
 rm -rf /etc/ocis
 ln -s "${OCIS_CONFIG_DIR}" /etc/ocis
 
-# Driver S3NG
+# Configuración del driver de almacenamiento S3NG
 export STORAGE_USERS_DRIVER="s3ng"
 export STORAGE_USERS_S3NG_ENDPOINT="http://127.0.0.1:8080"
 export STORAGE_USERS_S3NG_REGION="default"
@@ -252,7 +256,7 @@ export STORAGE_USERS_S3NG_ACCESS_KEY="dummy"
 export STORAGE_USERS_S3NG_SECRET_KEY="dummy"
 export STORAGE_USERS_S3NG_PUT_OBJECT_DISABLE_CONTENT_SHA256="true"
 
-# Integración OIDC con Pocket-ID en su subdominio
+# Integración OIDC con Pocket ID
 export OCIS_OIDC_ISSUER="https://id.${DOMAIN_NAME}"
 export WEB_OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-ocis-monolith}"
 export PROXY_OIDC_ISSUER="https://id.${DOMAIN_NAME}"
@@ -262,9 +266,13 @@ export PROXY_USER_OIDC_CLAIM="preferred_username"
 export OCIS_OIDC_CLAIM_USERNAME="preferred_username"
 export OCIS_OIDC_CLAIM_EMAIL="email"
 
+# Si tras el intento de restauración sigue sin existir, se genera y se respalda
 if [ ! -f "${OCIS_CONFIG_DIR}/ocis.yaml" ]; then
     log "OCIS" "Generando configuración inicial..."
     ocis init --insecure true --config-path "${OCIS_CONFIG_DIR}" > >(log_pipe "ocis-init") 2>&1
+
+    log "OCIS" "Subiendo copia de seguridad de configuración al almacenamiento cifrado..."
+    rclone copy "${OCIS_CONFIG_DIR}/" crypt-store:ocis/backups/ocis-config/ --config "${RCLONE_CONFIG}" 2>&1 | log_pipe "rclone-backup" || true
 fi
 
 log "OCIS" "Arrancando microservicios internos..."
@@ -272,7 +280,7 @@ ocis server > >(log_pipe "ocis") 2>&1 &
 OCIS_PID=$!
 PIDS+=(${OCIS_PID})
 
-# Esperar a que OCIS abra el puerto 9200 comprobando que el proceso siga vivo
+# Esperar a que OCIS abra el puerto 9200 comprobando que el proceso siga con vida
 while ! nc -z 127.0.0.1 9200; do
     if ! kill -0 "${OCIS_PID}" 2>/dev/null; then
         log "ERROR" "OCIS se detuvo inesperadamente al arrancar. Revisa los logs anteriores."
