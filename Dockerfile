@@ -26,20 +26,20 @@ COPY --from=bin-caddy /usr/bin/caddy /usr/local/bin/caddy
 COPY --from=bin-rclone /usr/local/bin/rclone /usr/local/bin/rclone
 COPY --from=bin-ocis /usr/bin/ocis /usr/local/bin/ocis
 COPY --from=bin-litestream /usr/local/bin/litestream /usr/local/bin/litestream
-# Pocket-ID suele empaquetar backend y frontend en /app
 COPY --from=bin-pocketid /app /opt/pocket-id
 
 # Directorios de trabajo
 RUN mkdir -p /data/system /data/cache/rclone /etc/app
 
-# Justo donde copias el entrypoint y el Caddyfile:
+# Copiar archivos de configuración y scripts
 COPY Caddyfile /etc/app/Caddyfile
+COPY litestream.yml /etc/app/litestream.yml
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY gc.sh /usr/local/bin/gc.sh
 
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/gc.sh
 
-EXPOSE 80 443 9200
+EXPOSE 80 443 443/udp
 VOLUME ["/data"]
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
