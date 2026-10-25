@@ -243,9 +243,11 @@ if [ ! -f "${OCIS_CONFIG_DIR}/ocis.yaml" ]; then
     rclone copy crypt-store:ocis/backups/ocis-config/ "${OCIS_CONFIG_DIR}/" --config "${RCLONE_CONFIG}" 2>/dev/null || true
 fi
 
-# Enlace simbólico para que /etc/ocis apunte siempre a la ruta persistente
-rm -rf /etc/ocis
-ln -s "${OCIS_CONFIG_DIR}" /etc/ocis
+# Asegurar que /etc/ocis/ocis.yaml exista sin tocar el punto de montaje del sistema
+mkdir -p /etc/ocis
+if [ -f "${OCIS_CONFIG_DIR}/ocis.yaml" ]; then
+    ln -sf "${OCIS_CONFIG_DIR}/ocis.yaml" /etc/ocis/ocis.yaml 2>/dev/null || cp -f "${OCIS_CONFIG_DIR}/ocis.yaml" /etc/ocis/ocis.yaml 2>/dev/null || true
+fi
 
 # Configuración del driver de almacenamiento S3NG
 export STORAGE_USERS_DRIVER="s3ng"
@@ -271,8 +273,13 @@ if [ ! -f "${OCIS_CONFIG_DIR}/ocis.yaml" ]; then
     log "OCIS" "Generando configuración inicial..."
     ocis init --insecure true --config-path "${OCIS_CONFIG_DIR}" > >(log_pipe "ocis-init") 2>&1
 
+    # Copiar también al directorio por defecto
+    cp -f "${OCIS_CONFIG_DIR}/ocis.yaml" /etc/ocis/ocis.yaml 2>/dev/null || true
+
     log "OCIS" "Subiendo copia de seguridad de configuración al almacenamiento cifrado..."
     rclone copy "${OCIS_CONFIG_DIR}/" crypt-store:ocis/backups/ocis-config/ --config "${RCLONE_CONFIG}" 2>&1 | log_pipe "rclone-backup" || true
+else
+    cp -f "${OCIS_CONFIG_DIR}/ocis.yaml" /etc/ocis/ocis.yaml 2>/dev/null || true
 fi
 
 log "OCIS" "Arrancando microservicios internos..."
