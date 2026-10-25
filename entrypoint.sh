@@ -100,22 +100,17 @@ else
     cat <<EOF > "${CADDY_CONFIG}"
 {
     admin off
-    email ${ACME_EMAIL:-admin@${DOMAIN_NAME}}
-}
-
-id.${DOMAIN_NAME} {
     storage file_system {
         root /data/system/caddy
     }
-    protocols h1 h2 h3
+    ${ACME_EMAIL:+email ${ACME_EMAIL}}
+}
+
+id.${DOMAIN_NAME} {
     reverse_proxy 127.0.0.1:8081
 }
 
 ${DOMAIN_NAME} {
-    storage file_system {
-        root /data/system/caddy
-    }
-    protocols h1 h2 h3
     reverse_proxy https://127.0.0.1:9200 {
         transport http {
             tls_insecure_skip_verify
@@ -205,9 +200,18 @@ log "POCKET-ID" "Servicio OIDC listo en 127.0.0.1:8081."
 # ==============================================================================
 log "CADDY" "Levantando reverse proxy..."
 caddy run --config "${CADDY_CONFIG}" > >(log_pipe "caddy") 2>&1 &
-PIDS+=($!)
+CADDY_PID=$!
+PIDS+=(${CADDY_PID})
 
-while ! nc -z 127.0.0.1 80; do sleep 0.3; done
+# Esperar a que Caddy abra puerto o detectar si muere de inmediato
+while ! nc -z 127.0.0.1 80 && ! nc -z 127.0.0.1 443; do
+    if ! kill -0 "${CADDY_PID}" 2>/dev/null; then
+        log "ERROR" "Caddy se cerró inesperadamente al arrancar. Revisa la sintaxis."
+        exit 1
+    fi
+    sleep 0.3
+done
+log "CADDY" "Reverse proxy operativo en puertos 80/443."
 
 # ==============================================================================
 # 6. MOTOR OCIS
