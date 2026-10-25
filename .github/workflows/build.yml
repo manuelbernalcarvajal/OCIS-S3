@@ -2,8 +2,8 @@ name: Build and Push Monolith Image
 
 on:
   push:
-    #branches:
-     # - main
+    # branches:
+    #   - main
     tags:
       - 'v*.*.*'
       - '*.*.*'
@@ -11,7 +11,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build:
@@ -36,12 +35,12 @@ jobs:
 
       - name: Normalizar nombre de imagen a minúsculas
         run: echo "IMAGE_NAME_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
-        
+
       - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}
           flavor: |
             latest=auto
           tags: |
