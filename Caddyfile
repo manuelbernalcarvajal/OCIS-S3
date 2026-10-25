@@ -1,0 +1,25 @@
+{
+    admin off
+    persist_config off
+}
+
+{$DOMAIN_NAME:localhost} {
+    # Almacén de certificados dentro del volumen persistente
+    storage file_system {
+        root /data/system/caddy
+    }
+
+    # Rutas para autenticación Pocket ID
+    handle /id/* {
+        reverse_proxy 127.0.0.1:8081
+    }
+
+    # Tráfico general (OCIS Web, WebDAV, APIs)
+    handle {
+        reverse_proxy https://127.0.0.1:9200 {
+            transport http {
+                tls_insecure_skip_verify
+            }
+        }
+    }
+}
