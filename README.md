@@ -14,44 +14,29 @@
 ```
 services:
   nube:
-    image: ghcr.io/TU_USUARIO_GITHUB/NOMBRE_DEL_REPO:latest
+    image: ghcr.io/TU_USUARIO/TU_REPO:latest
     container_name: monolith-cloud
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
     environment:
-      # --- DOMINIO Y RED ---
       - DOMAIN_NAME=nube.tudominio.com
 
-      # --- CABLE 1: REMOTO B2 Y CIFRADO (RCLONE) ---
-      # Remoto crudo hacia Backblaze B2
-      - RCLONE_CONFIG_B2RAW_TYPE=b2
-      - RCLONE_CONFIG_B2RAW_ACCOUNT=tu_application_key_id
-      - RCLONE_CONFIG_B2RAW_KEY=tu_application_key
-      - RCLONE_CONFIG_B2RAW_HARD_DELETE=true
-      # Capa de cifrado transparente sobre el bucket de B2
-      - RCLONE_CONFIG_B2CRYPT_TYPE=crypt
-      - RCLONE_CONFIG_B2CRYPT_REMOTE=b2raw:mi-bucket-ocis/cifrado
-      - RCLONE_CONFIG_B2CRYPT_PASSWORD_SALT=tu_salt_secreto_generado
-      - RCLONE_CONFIG_B2CRYPT_PASSWORD=tu_password_secreto_generado
-
-      # --- CABLE 2: PASARELA S3 LOCAL (RCLONE <-> OCIS) ---
-      - LOCAL_S3_USER=ocis_s3_admin
-      - LOCAL_S3_PASSWORD=clave_aleatoria_s3_muy_larga_123
-      - LOCAL_S3_PORT=8080
-
-      # --- CABLE 3: IDENTIDAD OIDC (POCKET ID <-> OCIS) ---
-      - OIDC_CLIENT_ID=ocis-web
-      - OIDC_CLIENT_SECRET=clave_secreta_oidc_para_comunicacion_interna
-      - POCKETID_ADMIN_EMAIL=tu-email@tudominio.com
-
-      # --- BACKUPS LITESTREAM (METADATOS Y USUARIOS A S3) ---
+      # Credenciales de tu proveedor S3 (B2, AWS, R2, etc.)
       - S3_ENDPOINT=https://s3.eu-central-003.backblazeb2.com
-      - S3_BUCKET_BACKUP=mi-bucket-backups
-      - AWS_ACCESS_KEY_ID=tu_application_key_id
+      - S3_PROVIDER=Backblaze
+      - AWS_ACCESS_KEY_ID=tu_key_id
       - AWS_SECRET_ACCESS_KEY=tu_application_key
+      
+      # Buckets y Cifrado
+      - OCIS_S3_BUCKET=mi-bucket-archivos
+      - S3_BUCKET_BACKUP=mi-bucket-backups
+      - CRYPT_PASSWORD=FraseUltraSeguraParaCifradoRclone
+      - CRYPT_SALT=FraseSaltAdicionalOpcional
 
+      # Cliente OIDC Pocket ID
+      - OIDC_CLIENT_ID=ocis-monolith
     volumes:
       - ./datos_nube:/data
     ulimits:
