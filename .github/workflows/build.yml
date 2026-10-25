@@ -2,8 +2,11 @@ name: Build and Push Monolith Image
 
 on:
   push:
+    branches: [ "main" ]
     tags:
-      - 'v*'
+      - 'v*.*.*'
+      - '*.*.*'
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -36,6 +39,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
             type=raw,value=latest
             type=sha
 
