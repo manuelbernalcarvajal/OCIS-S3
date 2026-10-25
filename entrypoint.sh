@@ -160,7 +160,7 @@ rclone serve s3 crypt-store: \
     --auth-key "dummy,dummy" \
     --cache-dir "/data/cache/rclone" \
     --vfs-cache-mode full \
-    --vfs-cache-min-free-space 30% \
+    --vfs-cache-min-free-space 5G \
     --vfs-cache-max-age 48h \
     --vfs-fast-fingerprint \
     --no-modtime \
