@@ -13,21 +13,28 @@
 ```
 ```
 services:
-  cloud-monolith:
-    build: .
+  nube:
+    image: ghcr.io/TU_USUARIO_GITHUB/NOMBRE_DEL_REPO:latest
     container_name: monolith-cloud
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
     environment:
+      # Dominio y Routing
       - DOMAIN_NAME=nube.tudominio.com
-      - RCLONE_REMOTE=b2-crypt    # Definido en rclone.conf o por vars RCLONE_*
+      
+      # Pocket ID / Litestream
+      - S3_ENDPOINT=https://s3.eu-central-003.backblazeb2.com # Tu endpoint
+      - S3_BUCKET_BACKUP=mi-bucket-backups
+      - AWS_ACCESS_KEY_ID=tu_key_id
+      - AWS_SECRET_ACCESS_KEY=tu_application_key
+      
+      # Rclone (Pasarela S3 cifrada)
+      - RCLONE_REMOTE=b2-crypt
       - OCIS_S3_BUCKET=ocis-data
-      - S3_BUCKET_BACKUP=backups-sistema
     volumes:
       - ./datos_nube:/data
-    # Evita que rclone se quede sin descriptores de archivo en cargas pesadas
     ulimits:
       nofile:
         soft: 65536
