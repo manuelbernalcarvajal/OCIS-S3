@@ -184,8 +184,11 @@ else
 fi
 export ENCRYPTION_KEY="${ENCRYPTION_KEY:-$(cat "${KEY_FILE}")}"
 
-log "LITESTREAM" "Comprobando réplica previa de base de datos..."
-litestream restore -if-replica-exists -config /etc/app/litestream.yml "${DB_PATH}" > >(log_pipe "litestream-sync") 2>&1 || true
+# Solo restaurar desde S3 si el archivo local NO existe
+if [ ! -f "${DB_PATH}" ]; then
+    log "LITESTREAM" "Comprobando réplica previa de base de datos..."
+    litestream restore -if-replica-exists -config /etc/app/litestream.yml "${DB_PATH}" > >(log_pipe "litestream-sync") 2>&1 || true
+fi
 
 litestream replicate -config /etc/app/litestream.yml > >(log_pipe "litestream") 2>&1 &
 PIDS+=($!)
