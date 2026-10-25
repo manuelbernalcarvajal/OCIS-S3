@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 # ==============================================================================
-# 0. LOGGING Y CONTROL DE SEÑALES
+# 0. LOGGING, VALIDACIÓN Y CONTROL DE SEÑALES
 # ==============================================================================
 log() {
     local service="$1"
@@ -17,31 +17,56 @@ log_pipe() {
     done
 }
 
+PIDS=()
+
 cleanup() {
-    log "SYSTEM" "Señal de parada recibida. Cerrando servicios..."
-    kill -TERM $(jobs -p) 2>/dev/null || true
-    wait
+    log "SYSTEM" "Señal de parada recibida. Cerrando servicios ordenadamente..."
+    if [ "${#PIDS[@]}" -gt 0 ]; then
+        kill -TERM "${PIDS[@]}" 2>/dev/null || true
+        wait "${PIDS[@]}" 2>/dev/null || true
+    fi
     log "SYSTEM" "Contenedor apagado limpiamente."
     exit 0
 }
 trap cleanup SIGTERM SIGINT
 
+# Validación de variables de entorno obligatorias
+REQUIRED_VARS=(
+    "DOMAIN_NAME"
+    "S3_ENDPOINT"
+    "AWS_ACCESS_KEY_ID"
+    "AWS_SECRET_ACCESS_KEY"
+    "OCIS_S3_BUCKET"
+    "CRYPT_PASSWORD"
+)
+for var in "${REQUIRED_VARS[@]}"; do
+    if [ -z "${!var:-}" ]; then
+        log "ERROR" "Falta la variable de entorno obligatoria: ${var}"
+        exit 1
+    fi
+done
+
 # ==============================================================================
 # 1. PARCHE DE RED (Anti-Hairpin NAT) Y DIRECTORIOS
 # ==============================================================================
-# Resuelve el dominio dentro del contenedor a localhost para evitar caídas
-# si el firewall exterior o el router no soportan NAT Loopback
-if ! grep -q "${DOMAIN_NAME}" /etc/hosts 2>/dev/null; then
-    echo "127.0.0.1 ${DOMAIN_NAME}" >> /etc/hosts 2>/dev/null || true
-    log "SYSTEM" "Bypass DNS local aplicado para ${DOMAIN_NAME}."
+# Solo aplicar bypass a 127.0.0.1 cuando Caddy gestiona TLS directamente (:443).
+# Si BEHIND_PROXY=true, el contenedor no escucha en :443 y OCIS debe resolver el proxy externo.
+if [ "${BEHIND_PROXY:-false}" != "true" ]; then
+    if ! grep -q "${DOMAIN_NAME}" /etc/hosts 2>/dev/null; then
+        echo "127.0.0.1 ${DOMAIN_NAME}" >> /etc/hosts 2>/dev/null || true
+        log "SYSTEM" "Bypass DNS local aplicado para ${DOMAIN_NAME}."
+    fi
 fi
 
 mkdir -p /data/cache/rclone \
          /data/system/caddy \
          /data/system/pocket-id \
          /data/system/ocis/config \
-         /tmp/rclone \
          /etc/app
+
+# Enlazar el directorio data de Pocket-ID al volumen persistente
+rm -rf /opt/pocket-id/data
+ln -s /data/system/pocket-id /opt/pocket-id/data
 
 # ==============================================================================
 # 2. GENERACIÓN DINÁMICA DE CADDYFILE
@@ -57,12 +82,12 @@ if [ "${BEHIND_PROXY:-false}" = "true" ]; then
 }
 
 :80 {
-    handle_path /id/* {
+    handle /id* {
         reverse_proxy 127.0.0.1:8081
     }
 
     handle {
-        reverse_proxy 127.0.0.1:9200 {
+        reverse_proxy https://127.0.0.1:9200 {
             transport http {
                 tls_insecure_skip_verify
             }
@@ -85,12 +110,12 @@ ${DOMAIN_NAME} {
 
     protocols h1 h2 h3
 
-    handle_path /id/* {
+    handle /id* {
         reverse_proxy 127.0.0.1:8081
     }
 
     handle {
-        reverse_proxy 127.0.0.1:9200 {
+        reverse_proxy https://127.0.0.1:9200 {
             transport http {
                 tls_insecure_skip_verify
             }
@@ -103,8 +128,9 @@ fi
 # ==============================================================================
 # 3. RCLONE S3 GATEWAY (PRIMERO EN ARRANCAR)
 # ==============================================================================
-log "RCLONE" "Escribiendo configuración en memoria..."
-cat <<EOF > /tmp/rclone/rclone.conf
+RCLONE_CONFIG="/etc/app/rclone.conf"
+log "RCLONE" "Escribiendo configuración cifrada en ${RCLONE_CONFIG}..."
+cat <<EOF > "${RCLONE_CONFIG}"
 [s3-raw]
 type = s3
 provider = ${S3_PROVIDER:-Other}
@@ -121,10 +147,15 @@ password2 = $(rclone obscure "${CRYPT_SALT:-${CRYPT_PASSWORD}}")
 directory_name_encryption = true
 filename_encryption = standard
 EOF
+chmod 600 "${RCLONE_CONFIG}"
+
+# Asegurar que el directorio/bucket 'ocis' existe dentro del remoto cifrado
+log "RCLONE" "Verificando estructura de bucket interno 'ocis'..."
+rclone mkdir --config "${RCLONE_CONFIG}" crypt-store:ocis 2>&1 | log_pipe "rclone-init" || true
 
 log "RCLONE" "Iniciando pasarela S3 en 127.0.0.1:8080..."
 rclone serve s3 crypt-store: \
-    --config /tmp/rclone/rclone.conf \
+    --config "${RCLONE_CONFIG}" \
     --addr "127.0.0.1:8080" \
     --auth-key "dummy,dummy" \
     --cache-dir "/data/cache/rclone" \
@@ -133,7 +164,8 @@ rclone serve s3 crypt-store: \
     --vfs-cache-max-age 48h \
     --vfs-fast-fingerprint \
     --no-modtime \
-    2>&1 | log_pipe "rclone" &
+    > >(log_pipe "rclone") 2>&1 &
+PIDS+=($!)
 
 while ! nc -z 127.0.0.1 8080; do sleep 0.3; done
 log "RCLONE" "Pasarela operativa con credenciales explícitas autorizadas."
@@ -142,61 +174,23 @@ log "RCLONE" "Pasarela operativa con credenciales explícitas autorizadas."
 # 4. LITESTREAM + POCKET-ID (DESPUÉS DE RCLONE)
 # ==============================================================================
 DB_PATH="/data/system/pocket-id/pocket-id.db"
-FIRST_RUN=false
-[ ! -f "${DB_PATH}" ] && FIRST_RUN=true
 
-# Litestream consulta al Rclone local que ya está en escucha
 log "LITESTREAM" "Comprobando réplica cifrada de SQLite..."
-litestream restore -if-replica-exists -config /etc/app/litestream.yml "${DB_PATH}" 2>&1 | log_pipe "litestream-sync" || true
-[ -f "${DB_PATH}" ] && FIRST_RUN=false
+litestream restore -if-replica-exists -config /etc/app/litestream.yml "${DB_PATH}" > >(log_pipe "litestream-sync") 2>&1 || true
 
-litestream replicate -config /etc/app/litestream.yml 2>&1 | log_pipe "litestream" &
+litestream replicate -config /etc/app/litestream.yml > >(log_pipe "litestream") 2>&1 &
+PIDS+=($!)
 
-export DB_PATH="${DB_PATH}"
+export DB_CONNECTION_STRING="file:${DB_PATH}?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
 export APP_URL="https://${DOMAIN_NAME}/id"
 export PORT="8081"
+export HOST="127.0.0.1"
 
-(cd /opt/pocket-id && ./pocket-id) 2>&1 | log_pipe "pocket-id" &
+(cd /opt/pocket-id && ./pocket-id) > >(log_pipe "pocket-id") 2>&1 &
+PIDS+=($!)
+
 while ! nc -z 127.0.0.1 8081; do sleep 0.3; done
-
-# Registro automático en Pocket-ID con diagnóstico de respuesta
-if [ "${FIRST_RUN}" = "true" ]; then
-    log "POCKET-ID" "Configurando admin y cliente OIDC iniciales..."
-    
-    ADMIN_USER="${INITIAL_ADMIN_USER:-admin}"
-    ADMIN_PASS="${INITIAL_ADMIN_PASSWORD:-Admin123456!}"
-    ADMIN_MAIL="${INITIAL_ADMIN_EMAIL:-admin@${DOMAIN_NAME}}"
-
-    # 1. Crear usuario Admin
-    RESP_USER=$(curl -s -o /tmp/resp_user.json -w "%{http_code}" -X POST http://127.0.0.1:8081/api/setup \
-        -H "Content-Type: application/json" \
-        -d "{\"username\":\"${ADMIN_USER}\",\"email\":\"${ADMIN_MAIL}\",\"password\":\"${ADMIN_PASS}\"}")
-
-    if [ "${RESP_USER}" -ge 200 ] && [ "${RESP_USER}" -lt 300 ]; then
-        log "POCKET-ID" "Usuario Admin creado correctamente."
-    else
-        log "POCKET-ID" "Aviso en setup (HTTP ${RESP_USER}): $(cat /tmp/resp_user.json 2>/dev/null)"
-    fi
-
-    # 2. Registrar cliente OCIS
-    RESP_CLIENT=$(curl -s -o /tmp/resp_client.json -w "%{http_code}" -X POST http://127.0.0.1:8081/api/oidc/clients \
-        -H "Content-Type: application/json" \
-        -d "{
-            \"id\": \"${OIDC_CLIENT_ID:-ocis-monolith}\",
-            \"name\": \"ownCloud Infinite Scale\",
-            \"redirectUris\": [
-                \"https://${DOMAIN_NAME}/\",
-                \"https://${DOMAIN_NAME}/oidc-callback.html\"
-            ],
-            \"isPublic\": true
-        }")
-
-    if [ "${RESP_CLIENT}" -ge 200 ] && [ "${RESP_CLIENT}" -lt 300 ]; then
-        log "POCKET-ID" "Cliente OIDC registrado correctamente."
-    else
-        log "POCKET-ID" "Aviso en registro OIDC (HTTP ${RESP_CLIENT}): $(cat /tmp/resp_client.json 2>/dev/null)"
-    fi
-fi
+log "POCKET-ID" "Servicio OIDC activo en 127.0.0.1:8081 (Completar setup WebAuthn en https://${DOMAIN_NAME}/id/login/setup si es la primera ejecución)."
 
 # ==============================================================================
 # 5. NÚCLEO OCIS
@@ -206,14 +200,16 @@ log "OCIS" "Inicializando entorno de almacenamiento y OIDC..."
 export OCIS_BASE_DATA_PATH="/data/system/ocis"
 export OCIS_URL="https://${DOMAIN_NAME}"
 export OCIS_INSECURE="true"
+export OCIS_EXCLUDE_RUN_SERVICES="idp"
 
-# Driver S3 apuntando a rclone
-export STORAGE_USERS_DRIVER="s3"
-export STORAGE_USERS_S3_ENDPOINT="http://127.0.0.1:8080"
-export STORAGE_USERS_S3_REGION="default"
-export STORAGE_USERS_S3_BUCKET="ocis"
-export STORAGE_USERS_S3_ACCESS_KEY="dummy"
-export STORAGE_USERS_S3_SECRET_KEY="dummy"
+# Driver S3NG oficial de OCIS apuntando a la pasarela Rclone
+export STORAGE_USERS_DRIVER="s3ng"
+export STORAGE_USERS_S3NG_ENDPOINT="http://127.0.0.1:8080"
+export STORAGE_USERS_S3NG_REGION="default"
+export STORAGE_USERS_S3NG_BUCKET="ocis"
+export STORAGE_USERS_S3NG_ACCESS_KEY="dummy"
+export STORAGE_USERS_S3NG_SECRET_KEY="dummy"
+export STORAGE_USERS_S3NG_PUT_OBJECT_DISABLE_CONTENT_SHA256="true"
 
 # OIDC con Pocket-ID
 export OCIS_OIDC_ISSUER="https://${DOMAIN_NAME}/id"
@@ -227,24 +223,29 @@ export OCIS_OIDC_CLAIM_EMAIL="email"
 
 if [ ! -f "/data/system/ocis/config/ocis.yaml" ]; then
     log "OCIS" "Generando configuración inicial mediante 'ocis init'..."
-    ocis init --insecure true 2>&1 | log_pipe "ocis-init"
+    ocis init --insecure true > >(log_pipe "ocis-init") 2>&1
 fi
 
 log "OCIS" "Arrancando microservicios internos..."
-ocis server 2>&1 | log_pipe "ocis" &
+ocis server > >(log_pipe "ocis") 2>&1 &
+PIDS+=($!)
+
 while ! nc -z 127.0.0.1 9200; do sleep 0.5; done
 
 # ==============================================================================
 # 5.5. LANZAR RECOLECTOR DE BASURA MODULAR
 # ==============================================================================
 /usr/local/bin/gc.sh &
-disown $!
+PIDS+=($!)
 
 # ==============================================================================
 # 6. ENTRADA PÚBLICA CADDY
 # ==============================================================================
 log "CADDY" "Levantando reverse proxy..."
-caddy run --config "${CADDY_CONFIG}" 2>&1 | log_pipe "caddy" &
+caddy run --config "${CADDY_CONFIG}" > >(log_pipe "caddy") 2>&1 &
+PIDS+=($!)
 
 log "SYSTEM" "Contenedor monolítico 100% operativo."
-wait -n
+wait -n "${PIDS[@]}"
+log "ERROR" "Uno de los servicios principales se ha detenido inesperadamente. Cerrando contenedor..."
+cleanup
