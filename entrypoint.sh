@@ -83,6 +83,9 @@ if [ "${BEHIND_PROXY:-false}" = "true" ]; then
 :80 {
     @id host id.${DOMAIN_NAME}
     handle @id {
+        header Access-Control-Allow-Origin *
+        header Access-Control-Allow-Methods "GET, POST, OPTIONS, HEAD"
+        header Access-Control-Allow-Headers "*"
         reverse_proxy 127.0.0.1:8081
     }
 
@@ -91,6 +94,7 @@ if [ "${BEHIND_PROXY:-false}" = "true" ]; then
             transport http {
                 tls_insecure_skip_verify
             }
+            header_down -Content-Security-Policy
         }
     }
 }
@@ -107,6 +111,9 @@ else
 }
 
 id.${DOMAIN_NAME} {
+    header Access-Control-Allow-Origin *
+    header Access-Control-Allow-Methods "GET, POST, OPTIONS, HEAD"
+    header Access-Control-Allow-Headers "*"
     reverse_proxy 127.0.0.1:8081
 }
 
@@ -115,6 +122,7 @@ ${DOMAIN_NAME} {
         transport http {
             tls_insecure_skip_verify
         }
+        header_down -Content-Security-Policy
     }
 }
 EOF
