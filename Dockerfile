@@ -17,6 +17,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tzdata \
     netcat-traditional \
     procps \
+    sqlite3 \
+    jq \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Copiar ejecutables
