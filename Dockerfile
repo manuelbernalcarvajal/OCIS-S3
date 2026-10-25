@@ -32,9 +32,12 @@ COPY --from=bin-pocketid /app /opt/pocket-id
 # Directorios de trabajo
 RUN mkdir -p /data/system /data/cache/rclone /etc/app
 
+# Justo donde copias el entrypoint y el Caddyfile:
 COPY Caddyfile /etc/app/Caddyfile
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+COPY gc.sh /usr/local/bin/gc.sh
+
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/gc.sh
 
 EXPOSE 80 443 9200
 VOLUME ["/data"]
