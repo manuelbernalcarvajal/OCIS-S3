@@ -138,6 +138,7 @@ access_key_id = ${AWS_ACCESS_KEY_ID}
 secret_access_key = ${AWS_SECRET_ACCESS_KEY}
 endpoint = ${S3_ENDPOINT}
 region = ${S3_REGION:-us-east-1}
+no_check_bucket = true
 
 [crypt-store]
 type = crypt
@@ -173,7 +174,18 @@ log "RCLONE" "Pasarela operativa con credenciales explícitas autorizadas."
 # ==============================================================================
 # 4. LITESTREAM + POCKET-ID (DESPUÉS DE RCLONE)
 # ==============================================================================
+# ==============================================================================
+# 4. LITESTREAM + POCKET-ID (DESPUÉS DE RCLONE)
+# ==============================================================================
 DB_PATH="/data/system/pocket-id/pocket-id.db"
+KEY_FILE="/data/system/pocket-id/encryption.key"
+
+# Generar o recuperar clave persistente para Pocket ID
+if [ ! -f "${KEY_FILE}" ]; then
+    log "POCKET-ID" "Generando clave de cifrado persistente..."
+    tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32 > "${KEY_FILE}"
+fi
+export ENCRYPTION_KEY="${ENCRYPTION_KEY:-$(cat "${KEY_FILE}")}"
 
 log "LITESTREAM" "Comprobando réplica cifrada de SQLite..."
 litestream restore -if-replica-exists -config /etc/app/litestream.yml "${DB_PATH}" > >(log_pipe "litestream-sync") 2>&1 || true
