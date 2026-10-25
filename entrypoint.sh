@@ -227,10 +227,21 @@ log "CADDY" "Reverse proxy operativo en puertos 80/443."
 # ==============================================================================
 log "OCIS" "Inicializando entorno de almacenamiento y OIDC..."
 
+export OCIS_CONFIG_DIR="/data/system/ocis/config"
 export OCIS_BASE_DATA_PATH="/data/system/ocis"
 export OCIS_URL="https://${DOMAIN_NAME}"
 export OCIS_INSECURE="true"
 export OCIS_EXCLUDE_RUN_SERVICES="idp"
+
+# Si en la prueba anterior se creó suelto en la raíz, lo movemos a /config
+if [ -f "/data/system/ocis/ocis.yaml" ] && [ ! -f "${OCIS_CONFIG_DIR}/ocis.yaml" ]; then
+    mkdir -p "${OCIS_CONFIG_DIR}"
+    mv /data/system/ocis/ocis.yaml "${OCIS_CONFIG_DIR}/ocis.yaml"
+fi
+
+# Enlace simbólico de respaldo para que /etc/ocis apunte siempre a nuestro volumen
+rm -rf /etc/ocis
+ln -s "${OCIS_CONFIG_DIR}" /etc/ocis
 
 # Driver S3NG
 export STORAGE_USERS_DRIVER="s3ng"
@@ -251,16 +262,25 @@ export PROXY_USER_OIDC_CLAIM="preferred_username"
 export OCIS_OIDC_CLAIM_USERNAME="preferred_username"
 export OCIS_OIDC_CLAIM_EMAIL="email"
 
-if [ ! -f "/data/system/ocis/config/ocis.yaml" ]; then
+if [ ! -f "${OCIS_CONFIG_DIR}/ocis.yaml" ]; then
     log "OCIS" "Generando configuración inicial..."
-    ocis init --insecure true > >(log_pipe "ocis-init") 2>&1
+    ocis init --insecure true --config-path "${OCIS_CONFIG_DIR}" > >(log_pipe "ocis-init") 2>&1
 fi
 
 log "OCIS" "Arrancando microservicios internos..."
 ocis server > >(log_pipe "ocis") 2>&1 &
-PIDS+=($!)
+OCIS_PID=$!
+PIDS+=(${OCIS_PID})
 
-while ! nc -z 127.0.0.1 9200; do sleep 0.5; done
+# Esperar a que OCIS abra el puerto 9200 comprobando que el proceso siga vivo
+while ! nc -z 127.0.0.1 9200; do
+    if ! kill -0 "${OCIS_PID}" 2>/dev/null; then
+        log "ERROR" "OCIS se detuvo inesperadamente al arrancar. Revisa los logs anteriores."
+        exit 1
+    fi
+    sleep 0.5
+done
+log "OCIS" "Microservicios operativos en puerto 9200."
 
 # ==============================================================================
 # 6.5. RECOLECTOR DE BASURA
