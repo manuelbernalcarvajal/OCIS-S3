@@ -172,9 +172,15 @@ log "RCLONE" "Pasarela operativa con credenciales explícitas."
 DB_PATH="/data/system/pocket-id/pocket-id.db"
 KEY_FILE="/data/system/pocket-id/encryption.key"
 
-if [ ! -f "${KEY_FILE}" ]; then
-    log "POCKET-ID" "Generando clave de cifrado persistente..."
-    tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32 > "${KEY_FILE}"
+# Usar variable de entorno fija o recuperar/generar en disco
+if [ -n "${POCKET_ID_ENCRYPTION_KEY:-}" ]; then
+    export ENCRYPTION_KEY="${POCKET_ID_ENCRYPTION_KEY}"
+else
+    if [ ! -f "${KEY_FILE}" ]; then
+        log "POCKET-ID" "Generando clave de cifrado persistente en disco..."
+        tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 32 > "${KEY_FILE}"
+    fi
+    export ENCRYPTION_KEY="$(cat "${KEY_FILE}")"
 fi
 export ENCRYPTION_KEY="${ENCRYPTION_KEY:-$(cat "${KEY_FILE}")}"
 
