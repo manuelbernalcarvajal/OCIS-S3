@@ -27,6 +27,7 @@ services:
     environment:
       - DOMAIN_NAME=nube.tudominio.com
       - BEHIND_PROXY=false
+      - POCKET_ID_ENCRYPTION_KEY=ClaveFijaPocketID_2026_Secreta1234
 
       # Credenciales de tu proveedor S3 (B2, AWS, R2, etc.)
       - S3_ENDPOINT=https://s3.eu-central-003.backblazeb2.com
