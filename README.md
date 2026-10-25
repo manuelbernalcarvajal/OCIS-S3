@@ -29,8 +29,8 @@ services:
       - BEHIND_PROXY=false
 
       # Credenciales de tu proveedor S3 (B2, AWS, R2, etc.)
-      - S3_ENDPOINT=[https://s3.eu-central-003.backblazeb2.com](https://s3.eu-central-003.backblazeb2.com)
-      - S3_PROVIDER=Backblaze
+      - S3_ENDPOINT=https://s3.eu-central-003.backblazeb2.com
+      - S3_PROVIDER=Other
       - S3_REGION=eu-central-003
       - AWS_ACCESS_KEY_ID=tu_key_id
       - AWS_SECRET_ACCESS_KEY=tu_application_key
