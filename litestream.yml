@@ -2,8 +2,10 @@ dbs:
   - path: /data/system/pocket-id/pocket-id.db
     replicas:
       - type: s3
-        bucket: "${S3_BUCKET_BACKUP}"
-        path: "litestream/pocket-id"
-        endpoint: "${S3_ENDPOINT}"
-        access-key-id: "${AWS_ACCESS_KEY_ID}"
-        secret-access-key: "${AWS_SECRET_ACCESS_KEY}"
+        bucket: "ocis"               # El bucket virtual de Rclone
+        path: "backups/pocket-id"
+        endpoint: "http://127.0.0.1:8080"
+        access-key-id: "dummy"
+        secret-access-key: "dummy"
+        skip-verify: true
+        force-path-style: true
