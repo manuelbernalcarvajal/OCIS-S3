@@ -236,7 +236,7 @@ while ! nc -z 127.0.0.1 9200; do sleep 0.5; done
 # 5.5. LANZAR RECOLECTOR DE BASURA MODULAR
 # ==============================================================================
 /usr/local/bin/gc.sh &
-PIDS+=($!)
+# PIDS+=($!) # no es primordial
 
 # ==============================================================================
 # 6. ENTRADA PÚBLICA CADDY
