@@ -8,30 +8,35 @@
 ├── Caddyfile
 ├── Dockerfile
 ├── entrypoint.sh
+├── gc.sh
 ├── litestream.yml
 └── compose.yml
 ```
-```
+## Ejemplo de `compose.yml`
+
+```yaml
 services:
   nube:
-    image: ghcr.io/TU_USUARIO/TU_REPO:latest
+    image: ghcr.io/manuelbernalcarvajal/ocis-s3:latest
     container_name: monolith-cloud
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
+      - "443:443/udp"
     environment:
       - DOMAIN_NAME=nube.tudominio.com
+      - BEHIND_PROXY=false
 
       # Credenciales de tu proveedor S3 (B2, AWS, R2, etc.)
-      - S3_ENDPOINT=https://s3.eu-central-003.backblazeb2.com
+      - S3_ENDPOINT=[https://s3.eu-central-003.backblazeb2.com](https://s3.eu-central-003.backblazeb2.com)
       - S3_PROVIDER=Backblaze
+      - S3_REGION=eu-central-003
       - AWS_ACCESS_KEY_ID=tu_key_id
       - AWS_SECRET_ACCESS_KEY=tu_application_key
-      
-      # Buckets y Cifrado
+
+      # Bucket y Cifrado Rclone
       - OCIS_S3_BUCKET=mi-bucket-archivos
-      - S3_BUCKET_BACKUP=mi-bucket-backups
       - CRYPT_PASSWORD=FraseUltraSeguraParaCifradoRclone
       - CRYPT_SALT=FraseSaltAdicionalOpcional
 
@@ -51,5 +56,5 @@ services:
 └── system/
     ├── caddy/              <-- Certificados SSL y estado de ACME
     ├── pocket-id/          <-- Base de datos SQLite y claves OIDC
-    └── ocis/               <-- Configuración YAML y llaves de cifrado generadas
+    └── ocis/               <-- Configuración YAML y metadatos locales de OCIS
 ```
